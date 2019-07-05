@@ -26,6 +26,7 @@ import {
     isObject,
     isUndefined,
     isFalse,
+    defineProperty,
 } from '../shared/language';
 import { HTMLElementOriginalDescriptors } from './html-properties';
 import { patchLightningElementPrototypeWithRestrictions } from './restrictions';
@@ -34,6 +35,7 @@ import {
     getWrappedComponentsListener,
     getComponentAsString,
     getTemplateReactiveObserver,
+    ComponentConstructor,
 } from './component';
 import { setInternalField, setHiddenField } from '../shared/fields';
 import { ViewModelReflection, EmptyObject } from './utils';
@@ -45,6 +47,7 @@ import { patchComponentWithRestrictions, patchShadowRootWithRestrictions } from 
 import { unlockAttribute, lockAttribute } from './attributes';
 import { Template } from './template';
 import { defaultEmptyTemplate } from './secure-template';
+import { buildCustomElementConstructor } from './wc';
 
 const GlobalEvent = Event; // caching global reference to avoid poisoning
 
@@ -479,6 +482,37 @@ const baseDescriptors: PropertyDescriptorMap = ArrayReduce.call(
 );
 
 defineProperties(BaseLightningElement.prototype, baseDescriptors);
+
+// Per Component Constructor, track the corresponding Custom Element
+const ContextProviderMetaMap = new Map();
+
+function getCustomElement(Ctor: ComponentConstructor): HTMLElement {
+    if ((Ctor as any) === BaseLightningElement) {
+        throw new SyntaxError(`Invalid Constructor`);
+    }
+    let ce = ContextProviderMetaMap.get(Ctor);
+    if (ce === undefined) {
+        ce = buildCustomElementConstructor(Ctor);
+        ContextProviderMetaMap.set(Ctor, ce);
+    }
+    return ce;
+}
+
+/**
+ * This static getter builds a Web Component class from a LWC constructor
+ * so it can be registered as a new element via customElements.define()
+ * at any given time. E.g.:
+ *
+ *      import Foo from 'ns/foo';
+ *      customElements.define('x-foo', Foo.CustomElement);
+ *      const elm = document.createElement('x-foo');
+ *
+ */
+defineProperty(BaseLightningElement, 'CustomElement', {
+    get() {
+        return getCustomElement(this);
+    },
+});
 
 if (process.env.NODE_ENV !== 'production') {
     patchLightningElementPrototypeWithRestrictions(BaseLightningElement.prototype);
