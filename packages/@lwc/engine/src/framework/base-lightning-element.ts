@@ -25,6 +25,7 @@ import {
     isNull,
     isObject,
     seal,
+    isUndefined,
 } from '@lwc/shared';
 import { logError } from '../shared/assert';
 import { HTMLElementOriginalDescriptors } from './html-properties';
@@ -43,6 +44,7 @@ import { dispatchEvent } from '../env/dom';
 import { patchComponentWithRestrictions, patchShadowRootWithRestrictions } from './restrictions';
 import { unlockAttribute, lockAttribute } from './attributes';
 import { Template } from './template';
+import { createObservedFieldsDescriptorMap } from './observed-fields';
 
 const GlobalEvent = Event; // caching global reference to avoid poisoning
 
@@ -293,6 +295,15 @@ function BaseLightningElementConstructor(this: LightningElement) {
         patchComponentWithRestrictions(component);
         patchShadowRootWithRestrictions(cmpRoot, EmptyObject);
     }
+
+    const {
+        def: { fields },
+    } = vm;
+
+    if (!isUndefined(fields)) {
+        defineProperties(this, createObservedFieldsDescriptorMap(fields));
+    }
+
     return this as LightningElement;
 }
 
