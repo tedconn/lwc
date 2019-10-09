@@ -554,8 +554,8 @@ export function isNodeFromTemplate(node: Node): boolean {
     return root instanceof ShadowRoot;
 }
 
-export function hasAttachedVM(elm: HTMLElement): boolean {
-    return !isUndefined(getHiddenField(elm, ViewModelReflection));
+export function getAttachedVMIfAvailable(elm: HTMLElement): VM | undefined {
+    return getHiddenField(elm, ViewModelReflection);
 }
 
 export function getCustomElementVM(elm: HTMLElement): VM {

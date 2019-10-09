@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: MIT
  * For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/MIT
  */
-import { getCustomElementVM, appendVM, removeVM, hasAttachedVM } from './vm';
+import { appendVM, removeVM, getAttachedVMIfAvailable } from './vm';
+import { isUndefined } from '@lwc/shared';
 
 const globalRegisteredNames: Set<string> = new Set();
 const isCustomElementsRegistryAvailable = typeof customElements !== 'undefined';
@@ -19,14 +20,14 @@ function attemptToDefineNewCustomElementRouter(tagName: string): boolean {
         tagName,
         class extends HTMLElement {
             connectedCallback() {
-                if (hasAttachedVM(this)) {
-                    const vm = getCustomElementVM(this);
+                const vm = getAttachedVMIfAvailable(this);
+                if (!isUndefined(vm)) {
                     appendVM(vm);
                 }
             }
             disconnectedCallback() {
-                if (hasAttachedVM(this)) {
-                    const vm = getCustomElementVM(this);
+                const vm = getAttachedVMIfAvailable(this);
+                if (!isUndefined(vm)) {
                     removeVM(vm);
                 }
             }
