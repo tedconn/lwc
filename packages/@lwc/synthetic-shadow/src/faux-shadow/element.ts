@@ -55,25 +55,9 @@ import { getNodeOwnerKey, isNodeShadowed } from '../faux-shadow/node';
 import { assignedSlotGetterPatched } from './slot';
 import { getNonPatchedFilteredArrayOfNodes } from './no-patch-utils';
 
-const { ENABLE_NODE_LIST_PATCH } = getInitializedFeatureFlags();
-
 enum ShadowDomSemantic {
     Disabled = 0,
     Enabled,
-}
-
-function getInitializedFeatureFlags() {
-    let ENABLE_NODE_LIST_PATCH;
-
-    if (featureFlags.ENABLE_NODE_LIST_PATCH) {
-        ENABLE_NODE_LIST_PATCH = true;
-    } else {
-        ENABLE_NODE_LIST_PATCH = false;
-    }
-
-    return {
-        ENABLE_NODE_LIST_PATCH,
-    };
 }
 
 function innerHTMLGetterPatched(this: Element): string {
@@ -274,30 +258,31 @@ function querySelectorPatched(this: Element /*, selector: string*/): Element | n
             return getFirstMatch(owner, nodeList);
         }
     } else if (isNodeShadowed(this)) {
-        // element inside a shadowRoot
+        if (!featureFlags.ENABLE_NODE_LIST_PATCH) {
+            if (isUndefined(getNodeOwnerKey(this))) {
+                const elm = nodeList[0];
+                return isUndefined(elm) ? null : elm;
+            }
+        }
+
         const ownerKey = getNodeOwnerKey(this);
-        if (!isUndefined(ownerKey) || ENABLE_NODE_LIST_PATCH) {
-            const elm = ArrayFind.call(nodeList, elm => getNodeOwnerKey(elm) === ownerKey);
-            return isUndefined(elm) ? null : elm;
-        } else {
-            // `this` is a manually inserted element inside a shadowRoot
-            const elm = nodeList[0];
-            return isUndefined(elm) ? null : elm;
-        }
+        const elm = ArrayFind.call(nodeList, elm => getNodeOwnerKey(elm) === ownerKey);
+        return isUndefined(elm) ? null : elm;
     } else {
-        // Note: document.body is already patched!
-        if (this instanceof HTMLBodyElement || ENABLE_NODE_LIST_PATCH) {
-            // element belonging to the document
-            const elm = ArrayFind.call(
-                nodeList,
-                // TODO: issue #1222 - remove global bypass
-                elm => isUndefined(getNodeOwnerKey(elm)) || isGlobalPatchingSkipped(this)
-            );
-            return isUndefined(elm) ? null : elm;
-        } else {
-            const elm = nodeList[0];
-            return isUndefined(elm) ? null : elm;
+        if (!featureFlags.ENABLE_NODE_LIST_PATCH) {
+            if (!(this instanceof HTMLBodyElement)) {
+                const elm = nodeList[0];
+                return isUndefined(elm) ? null : elm;
+            }
         }
+
+        // element belonging to the document
+        const elm = ArrayFind.call(
+            nodeList,
+            // TODO: issue #1222 - remove global bypass
+            elm => isUndefined(getNodeOwnerKey(elm)) || isGlobalPatchingSkipped(this)
+        );
+        return isUndefined(elm) ? null : elm;
     }
 }
 
