@@ -291,43 +291,42 @@ function getFilteredArrayOfNodes<T extends Node>(
     unfilteredNodes: T[],
     shadowDomSemantic: ShadowDomSemantic
 ): T[] {
-    let filtered: T[];
     if (isHostElement(context)) {
         // element with shadowRoot attached
         const owner = getNodeOwner(context);
         if (isNull(owner)) {
-            filtered = [];
+            return [];
         } else if (getNodeKey(context)) {
             // it is a custom element, and we should then filter by slotted elements
-            filtered = getAllSlottedMatches(context, unfilteredNodes);
+            return getAllSlottedMatches(context, unfilteredNodes);
         } else {
             // regular element, we should then filter by ownership
-            filtered = getAllMatches(owner, unfilteredNodes);
+            return getAllMatches(owner, unfilteredNodes);
         }
     } else if (isNodeShadowed(context)) {
         // element inside a shadowRoot
         const ownerKey = getNodeOwnerKey(context);
-        if (!isUndefined(ownerKey) || shadowDomSemantic === ShadowDomSemantic.Enabled) {
-            // The patch is enabled or `context` is an element rendered by lwc
-            filtered = ArrayFilter.call(unfilteredNodes, elm => getNodeOwnerKey(elm) === ownerKey);
-        } else {
-            // `context` is a manually inserted element inside a shadowRoot
-            filtered = ArraySlice.call(unfilteredNodes);
+        //  If the element is not rendered by LWC and shadow semantics are disabled
+        if (isUndefined(ownerKey) && shadowDomSemantic !== ShadowDomSemantic.Enabled) {
+            return unfilteredNodes;
         }
+        return ArrayFilter.call(unfilteredNodes, elm => getNodeOwnerKey(elm) === ownerKey);
     } else {
-        if (context instanceof HTMLBodyElement || shadowDomSemantic === ShadowDomSemantic.Enabled) {
-            // `context` is document.body or element belonging to the document with the patch enabled
-            filtered = ArrayFilter.call(
-                unfilteredNodes,
-                // TODO: issue #1222 - remove global bypass
-                elm => isUndefined(getNodeOwnerKey(elm)) || isGlobalPatchingSkipped(context)
-            );
-        } else {
+        // If the element is not the body element and shadow semantics are disabled
+        if (
+            !(context instanceof HTMLBodyElement) &&
+            shadowDomSemantic !== ShadowDomSemantic.Enabled
+        ) {
             // `context` is outside the lwc boundary and patch is not enabled.
-            filtered = ArraySlice.call(unfilteredNodes);
+            return unfilteredNodes;
         }
+        // `context` is document.body or element belonging to the document with the patch enabled
+        return ArrayFilter.call(
+            unfilteredNodes,
+            // TODO: issue #1222 - remove global bypass
+            elm => isUndefined(getNodeOwnerKey(elm)) || isGlobalPatchingSkipped(context)
+        );
     }
-    return filtered;
 }
 
 // The following patched methods hide shadowed elements from global
@@ -348,26 +347,19 @@ defineProperties(Element.prototype, {
     },
     querySelectorAll: {
         value(this: HTMLBodyElement): NodeListOf<Element> {
-            const nodeList = arrayFromCollection(
+            const elements = arrayFromCollection(
                 elementQuerySelectorAll.apply(this, ArraySlice.call(arguments) as [string])
             );
-            let filteredResults;
-
-            if (featureFlags.ENABLE_NODE_LIST_PATCH) {
-                filteredResults = getFilteredArrayOfNodes(
+            if (!featureFlags.ENABLE_NODE_LIST_PATCH) {
+                const filtered = getFilteredArrayOfNodes(
                     this,
-                    nodeList,
-                    ShadowDomSemantic.Enabled
-                );
-            } else {
-                filteredResults = getFilteredArrayOfNodes(
-                    this,
-                    nodeList,
+                    elements,
                     ShadowDomSemantic.Disabled
                 );
+                return createStaticNodeList(filtered);
             }
-
-            return createStaticNodeList(filteredResults);
+            const filtered = getFilteredArrayOfNodes(this, elements, ShadowDomSemantic.Enabled);
+            return createStaticNodeList(filtered);
         },
         writable: true,
         enumerable: true,
@@ -375,22 +367,19 @@ defineProperties(Element.prototype, {
     },
     getElementsByClassName: {
         value(this: HTMLBodyElement): HTMLCollectionOf<Element> {
-            let filteredResults;
             const elements = arrayFromCollection(
                 elementGetElementsByClassName.apply(this, ArraySlice.call(arguments) as [string])
             );
-
-            if (featureFlags.ENABLE_HTML_COLLECTIONS_PATCH) {
-                filteredResults = getFilteredArrayOfNodes(
-                    this,
-                    elements,
-                    ShadowDomSemantic.Enabled
-                );
-            } else {
-                filteredResults = getNonPatchedFilteredArrayOfNodes(this, elements);
+            if (!featureFlags.ENABLE_HTML_COLLECTIONS_PATCH) {
+                const filtered = getNonPatchedFilteredArrayOfNodes(this, elements) as Element[];
+                return createStaticHTMLCollection(filtered);
             }
-
-            return createStaticHTMLCollection(filteredResults);
+            const filtered = getFilteredArrayOfNodes(
+                this,
+                elements,
+                ShadowDomSemantic.Enabled
+            ) as Element[];
+            return createStaticHTMLCollection(filtered);
         },
         writable: true,
         enumerable: true,
@@ -398,22 +387,19 @@ defineProperties(Element.prototype, {
     },
     getElementsByTagName: {
         value(this: HTMLBodyElement): HTMLCollectionOf<Element> {
-            let filteredResults;
             const elements = arrayFromCollection(
                 elementGetElementsByTagName.apply(this, ArraySlice.call(arguments) as [string])
             );
-
-            if (featureFlags.ENABLE_HTML_COLLECTIONS_PATCH) {
-                filteredResults = getFilteredArrayOfNodes(
-                    this,
-                    elements,
-                    ShadowDomSemantic.Enabled
-                );
-            } else {
-                filteredResults = getNonPatchedFilteredArrayOfNodes(this, elements);
+            if (!featureFlags.ENABLE_HTML_COLLECTIONS_PATCH) {
+                const filtered = getNonPatchedFilteredArrayOfNodes(this, elements) as Element[];
+                return createStaticHTMLCollection(filtered);
             }
-
-            return createStaticHTMLCollection(filteredResults);
+            const filtered = getFilteredArrayOfNodes(
+                this,
+                elements,
+                ShadowDomSemantic.Enabled
+            ) as Element[];
+            return createStaticHTMLCollection(filtered);
         },
         writable: true,
         enumerable: true,
@@ -421,25 +407,22 @@ defineProperties(Element.prototype, {
     },
     getElementsByTagNameNS: {
         value(this: HTMLBodyElement): HTMLCollectionOf<Element> {
-            let filteredResults;
             const elements = arrayFromCollection(
                 elementGetElementsByTagNameNS.apply(this, ArraySlice.call(arguments) as [
                     string,
                     string
                 ])
             );
-
-            if (featureFlags.ENABLE_HTML_COLLECTIONS_PATCH) {
-                filteredResults = getFilteredArrayOfNodes(
-                    this,
-                    elements,
-                    ShadowDomSemantic.Enabled
-                );
-            } else {
-                filteredResults = getNonPatchedFilteredArrayOfNodes(this, elements);
+            if (!featureFlags.ENABLE_HTML_COLLECTIONS_PATCH) {
+                const filtered = getNonPatchedFilteredArrayOfNodes(this, elements) as Element[];
+                return createStaticHTMLCollection(filtered);
             }
-
-            return createStaticHTMLCollection(filteredResults);
+            const filtered = getFilteredArrayOfNodes(
+                this,
+                elements,
+                ShadowDomSemantic.Enabled
+            ) as Element[];
+            return createStaticHTMLCollection(filtered);
         },
         writable: true,
         enumerable: true,
