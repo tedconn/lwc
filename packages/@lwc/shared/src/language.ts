@@ -19,7 +19,7 @@ const {
     setPrototypeOf,
 } = Object;
 
-const { isArray } = Array;
+const { isArray, from: ArrayFrom } = Array;
 
 const {
     constructor: ArrayConstructor,
@@ -48,6 +48,7 @@ export {
     ArrayConstructor,
     ArrayFilter,
     ArrayFind,
+    ArrayFrom,
     ArrayIndexOf,
     ArrayJoin,
     ArrayMap,

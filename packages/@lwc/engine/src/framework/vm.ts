@@ -287,32 +287,30 @@ function patchShadowRoot(vm: VM, newCh: VNodes) {
     }
     const { cmpRoot, children: oldCh } = vm;
     vm.children = newCh; // caching the new children collection
-    if (newCh.length > 0 || oldCh.length > 0) {
+    if ((newCh.length > 0 || oldCh.length > 0) && oldCh !== newCh) {
         // patch function mutates vnodes by adding the element reference,
         // however, if patching fails it contains partial changes.
-        if (oldCh !== newCh) {
-            const fn = hasDynamicChildren(newCh) ? updateDynamicChildren : updateStaticChildren;
-            runWithBoundaryProtection(
-                vm,
-                vm,
-                () => {
-                    // pre
-                    if (process.env.NODE_ENV !== 'production') {
-                        startMeasure('patch', vm);
-                    }
-                },
-                () => {
-                    // job
-                    fn(cmpRoot, oldCh, newCh);
-                },
-                () => {
-                    // post
-                    if (process.env.NODE_ENV !== 'production') {
-                        endMeasure('patch', vm);
-                    }
+        const fn = hasDynamicChildren(newCh) ? updateDynamicChildren : updateStaticChildren;
+        runWithBoundaryProtection(
+            vm,
+            vm,
+            () => {
+                // pre
+                if (process.env.NODE_ENV !== 'production') {
+                    startMeasure('patch', vm);
                 }
-            );
-        }
+            },
+            () => {
+                // job
+                fn(cmpRoot, oldCh, newCh);
+            },
+            () => {
+                // post
+                if (process.env.NODE_ENV !== 'production') {
+                    endMeasure('patch', vm);
+                }
+            }
+        );
     }
     if (vm.state === VMState.connected) {
         // If the element is connected, that means connectedCallback was already issued, and

@@ -182,7 +182,7 @@ function transform(root: IRNode, codeGen: CodeGen): t.Expression {
         },
     });
 
-    /** Transforms IRElement to Javascript AST node and add it at the to of the stack  */
+    /** Transforms IRElement to Javascript AST node and add it at the top of the stack  */
     function transformElement(
         element: IRElement,
         children: t.Expression,
