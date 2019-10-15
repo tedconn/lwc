@@ -42,6 +42,12 @@ export function register(
     });
 }
 
+/**
+ * Registers the wire service. noop
+ * @deprecated
+ */
+export function registerWireService() {}
+
 import { ValueChangedEvent } from './value-changed-event';
 
 const { forEach, splice: ArraySplice, indexOf: ArrayIndexOf } = Array.prototype;
