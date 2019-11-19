@@ -1,10 +1,11 @@
-import { VNodes } from '../../3rdparty/snabbdom/types';
-import { VM, getComponentVM } from '../vm';
+import { VCustomElement, VNode, VNodeData, VElement, Hooks } from '../../3rdparty/snabbdom/types';
+import { getComponentVM } from '../vm';
 import { createElement } from '../upgrade';
 import { LightningElement } from '../base-lightning-element';
 import { renderComponent, ComponentConstructor } from '../component';
 
-import { serializeVNodes } from './serialize';
+import { serializeVNode } from './serialize';
+import { isCustomElement } from './snabdom-utils';
 
 /**
  * Rendering engine for SSR.
@@ -37,7 +38,7 @@ class SSRContext {
     }
 
     getPromise(): Promise<any> | null {
-        if (this.promises) {
+        if (this.promises.length > 0) {
             return Promise.all(this.promises);
         }
         return null;
@@ -48,11 +49,35 @@ class SSRContext {
 // SSR Rendering engine
 //
 
-function ssrRenderComponent(context: SSRContext, ce: LightningElement, vm: VM): VNodes {
+function createComponent(sel: string, Ctor: ComponentConstructor): LightningElement {
+    const comp: LightningElement = (createElement(sel, {
+        is: Ctor,
+    }) as unknown) as LightningElement;
+    return comp;
+}
+
+// Recursively render the embedded components
+function renderRecursively(context: SSRContext, nodes: (VNode | null)[]) {
+    nodes.forEach(vnode => {
+        if (vnode && isCustomElement(vnode)) {
+            const cv = vnode as VCustomElement;
+            // Is this currently the only way to create the component?
+            // Can we use a create hook instead?
+            //           cv.hook.create(vnode);
+            const comp = createComponent(cv.sel, cv.ctor);
+            (cv.owner = getComponentVM(comp)), ssrRenderComponent(context, cv);
+        }
+    });
+}
+
+function ssrRenderComponent(context: SSRContext, parent: VNode) {
+    const vm = parent.owner;
+
     // Mark the component as connected
     // Should happen before 'prefetchAsyncData', because this is the first time when the
     // component gets access to its properties so it can for example fetch() data.
     // prefetchAsyncData can get a hold on the Promise and return it for async rendering
+    const ce: LightningElement = vm.component as LightningElement;
     if (ce.connectedCallback) {
         ce.connectedCallback.call(ce);
     }
@@ -73,8 +98,16 @@ function ssrRenderComponent(context: SSRContext, ce: LightningElement, vm: VM): 
         }
     }
 
-    const v = renderComponent(vm);
-    return v;
+    // Make the VM dirty to force the rendering
+    // A check in debug mode will throw an error if it is false (renderComponent)
+    vm.isDirty = true; // Make it dirty to force
+    const children = renderComponent(vm);
+
+    if (children) {
+        renderRecursively(context, children);
+    }
+
+    parent.children = children;
 }
 
 export function renderToString(sel: string, options: Options): string {
@@ -87,11 +120,24 @@ export function renderToString(sel: string, options: Options): string {
 
     // Create the component to render
     // Ths use of a DOM element is temporary here
-    const comp: LightningElement = (createElement(sel, {
-        is: options.is,
-    }) as unknown) as LightningElement;
+    const comp = createComponent(sel, options.is);
 
-    const vnodes = ssrRenderComponent(context, comp, getComponentVM(comp));
+    // Create the main element
+    const data: VNodeData = {
+        attrs: {},
+    };
+    const parent: VElement = {
+        sel,
+        data,
+        children: [],
+        text: undefined,
+        elm: undefined,
+        key: 0,
+        hook: (null as any) as Hooks,
+        owner: getComponentVM(comp),
+    };
+
+    ssrRenderComponent(context, parent);
 
     // Ok, in case there are some pending promises (async data), we throw an exception
     if (options.asyncData) {
@@ -102,7 +148,7 @@ export function renderToString(sel: string, options: Options): string {
     }
 
     // Serialize the result to HTML
-    const html = serializeVNodes(vnodes);
+    const html = serializeVNode(parent);
     return html;
 }
 

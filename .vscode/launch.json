@@ -7,38 +7,9 @@
         {
             "type": "node",
             "request": "launch",
-            "name": "Launch Program",
-            "program": "${workspaceFolder}/start.js"
-        },
-        {
-          "type": "node",
-          "request": "launch",
-          "name": "Jest All",
-          "program": "${workspaceFolder}/packages/@lwc/ssr/node_modules/.bin/ts-jest",
-          "args": ["jest --config ./scripts/jest/root.config.js"],
-          "console": "integratedTerminal",
-          "internalConsoleOptions": "neverOpen",
-          "disableOptimisticBPs": true,
-          "windows": {
-            "program": "${workspaceFolder}/packages/@lwc/ssr/node_modules/bin/ts-jest",
-          }
-        },
-        {
-          "type": "node",
-          "request": "launch",
-          "name": "Jest Current File",
-          "program": "/Users/priand/Salesforce-dev/source/lwc-github/steffen-ssr/lwc-phil-ssr/packages/@lwc/ssr/node_modules/.bin/ts-jest",
-          "args": [
-            "${fileBasenameNoExtension}",
-            "--config",
-            "jest.config.js"
-          ],
-          "console": "integratedTerminal",
-          "internalConsoleOptions": "neverOpen",
-          "disableOptimisticBPs": true,
-          "windows": {
-            "program": "${workspaceFolder}/packages/@lwc/ssr/node_modules/bin/ts-jest",
-          }
+            "name": "Launch ssr-tests",
+            "program": "${workspaceFolder:lwc-phil-ssr}/packages/ssr-tests/server.js"
+      
         }
-        ]
+    ]
 }

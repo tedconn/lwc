@@ -6015,7 +6015,34 @@ function createElement(sel, options) {
   });
   return element;
 }
-// Adapted from loadash 3.0
+/**
+ * Void elements can't have any contents (since there's no end tag, no content can be put between the start tag and the end tag).
+ *
+ * @see https://html.spec.whatwg.org/multipage/syntax.html#elements-2
+ */
+
+
+const VOID_ELEMENTS = ['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'];
+
+function isVoidElement(nodeName) {
+  return VOID_ELEMENTS.includes(nodeName);
+}
+
+function isElement(node) {
+  return !!node.sel && node.sel !== '!';
+}
+
+function isCustomElement(node) {
+  return isElement(node) && !!node.mode;
+}
+
+function isComment(node) {
+  return node.sel === '!';
+}
+
+function isText(node) {
+  return node.sel === undefined;
+} // Adapted from loadash 3.0
 // https://github.com/lodash/lodash/tree/3.0.0-npm-packages/lodash.escape
 // MIT license
 //
@@ -6064,7 +6091,7 @@ function ɵserialize(vnode) {
   }
 
   if (isText(vnode)) {
-    return escape(vnode.text || "");
+    return escape(vnode.text || '');
   }
 
   if (isComment(vnode)) {
@@ -6072,14 +6099,14 @@ function ɵserialize(vnode) {
   }
 
   if (!isElement(vnode)) {
-    throw new Error("Internal error: unknown node type, " + JSON.stringify(vnode));
+    throw new Error('Internal error: unknown node type, ' + JSON.stringify(vnode));
   }
 
   const element = vnode;
-  const nodeName = (element.sel || "").toLowerCase();
+  const nodeName = (element.sel || '').toLowerCase();
 
   if (isVoidElement(nodeName)) {
-    const nodeName = (vnode.sel || "").toLowerCase();
+    const nodeName = (vnode.sel || '').toLowerCase();
     return serializeStartTag(nodeName, vnode);
   }
 
@@ -6108,38 +6135,7 @@ function ɵserialize(vnode) {
 }
 
 function serializeVNode(node) {
-  return node ? ɵserialize(node) : "";
-}
-
-function serializeVNodes(nodes) {
-  return nodes.reduce((value, vnode) => {
-    const s = serializeVNode(vnode);
-    return value + s;
-  }, "");
-}
-/**
- * Void elements can't have any contents (since there's no end tag, no content can be put between the start tag and the end tag).
- *
- * @see https://html.spec.whatwg.org/multipage/syntax.html#elements-2
- */
-
-
-const VOID_ELEMENTS = ['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'];
-
-function isVoidElement(nodeName) {
-  return VOID_ELEMENTS.includes(nodeName);
-}
-
-function isElement(node) {
-  return !!node.sel;
-}
-
-function isComment(node) {
-  return node.sel === '!';
-}
-
-function isText(node) {
-  return node.sel === undefined;
+  return node ? ɵserialize(node) : '';
 }
 /**
  * This class carries the ssr context while rendering the components, as well as
@@ -6161,7 +6157,7 @@ class SSRContext$1 {
   }
 
   getPromise() {
-    if (this.promises) {
+    if (this.promises.length > 0) {
       return Promise.all(this.promises);
     }
 
@@ -6173,11 +6169,35 @@ class SSRContext$1 {
 //
 
 
-function ssrRenderComponent(context, ce, vm) {
-  // Mark the component as connected
+function createComponent$1(sel, Ctor) {
+  const comp = createElement(sel, {
+    is: Ctor
+  });
+  return comp;
+} // Recursively render the embedded components
+
+
+function renderRecursively(context, nodes) {
+  nodes.forEach(vnode => {
+    if (vnode && isCustomElement(vnode)) {
+      const cv = vnode; // Is this currently the only way to create the component?
+      // Can we use a create hook instead?
+      //           cv.hook.create(vnode);
+
+      const comp = createComponent$1(cv.sel, cv.ctor);
+      cv.owner = getComponentVM(comp), ssrRenderComponent(context, cv);
+    }
+  });
+}
+
+function ssrRenderComponent(context, parent) {
+  const vm = parent.owner; // Mark the component as connected
   // Should happen before 'prefetchAsyncData', because this is the first time when the
   // component gets access to its properties so it can for example fetch() data.
   // prefetchAsyncData can get a hold on the Promise and return it for async rendering
+
+  const ce = vm.component;
+
   if (ce.connectedCallback) {
     ce.connectedCallback.call(ce);
   } //------
@@ -6199,10 +6219,19 @@ function ssrRenderComponent(context, ce, vm) {
 
       return [];
     }
+  } // Make the VM dirty to force the rendering
+  // A check in debug mode will throw an error if it is false (renderComponent)
+
+
+  vm.isDirty = true; // Make it dirty to force
+
+  const children = renderComponent(vm);
+
+  if (children) {
+    renderRecursively(context, children);
   }
 
-  const v = renderComponent(vm);
-  return v;
+  parent.children = children;
 }
 
 function renderToString$1(sel, options) {
@@ -6210,15 +6239,27 @@ function renderToString$1(sel, options) {
   const is = options.is;
 
   if (!is) {
-    throw new Error("Missing component type (options.is)");
+    throw new Error('Missing component type (options.is)');
   } // Create the component to render
   // Ths use of a DOM element is temporary here
 
 
-  const comp = createElement(sel, {
-    is: options.is
-  });
-  const vnodes = ssrRenderComponent(context, comp, getComponentVM(comp)); // Ok, in case there are some pending promises (async data), we throw an exception
+  const comp = createComponent$1(sel, options.is); // Create the main element 
+
+  const data = {
+    attrs: {}
+  };
+  const parent = {
+    sel,
+    data,
+    children: [],
+    text: undefined,
+    elm: undefined,
+    key: 0,
+    hook: null,
+    owner: getComponentVM(comp)
+  };
+  ssrRenderComponent(context, parent); // Ok, in case there are some pending promises (async data), we throw an exception
 
   if (options.asyncData) {
     const p = context.getPromise();
@@ -6229,7 +6270,7 @@ function renderToString$1(sel, options) {
   } // Serialize the result to HTML
 
 
-  const html = serializeVNodes(vnodes);
+  const html = serializeVNode(parent);
   return html;
 } // Temp export to the runtime
 
@@ -6269,10 +6310,42 @@ var HelloWorld$1 = registerComponent(HelloWorld, {
   tmpl: _tmpl
 });
 
+function tmpl$1($api, $cmp, $slotset, $ctx) {
+  const {
+    c: api_custom_element
+  } = $api;
+  return [api_custom_element("ssr-helloworld", HelloWorld$1, {
+    key: 0
+  }, [])];
+}
+
+var _tmpl$1 = registerTemplate(tmpl$1);
+tmpl$1.stylesheets = [];
+tmpl$1.stylesheetTokens = {
+  hostAttribute: "ssr-helloworldcontainer_helloworldcontainer-host",
+  shadowAttribute: "ssr-helloworldcontainer_helloworldcontainer"
+};
+
+class HelloWorld$2 extends BaseLightningElement {
+  constructor() {
+    super();
+  }
+
+}
+
+var HelloWorldContainer = registerComponent(HelloWorld$2, {
+  tmpl: _tmpl$1
+});
+
 var main = {
   HelloWorld: () => {
-    return renderToString('hello-world', {
+    return renderToString('ssr-helloworld', {
       is: HelloWorld$1
+    });
+  },
+  HelloWorldContainer: () => {
+    return renderToString('ssr-helloworldcontainer', {
+      is: HelloWorldContainer
     });
   }
 };
