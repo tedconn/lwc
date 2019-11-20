@@ -1,6 +1,6 @@
 import { LightningElement } from 'lwc';
 
-export default class HelloWorldContainer extends LightningElement {
+export default class LabelContainer extends LightningElement {
     constructor() {
         super();
     }

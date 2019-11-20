@@ -4920,6 +4920,123 @@ freeze(BaseLightningElementConstructor);
 seal(BaseLightningElementConstructor.prototype); // @ts-ignore
 
 const BaseLightningElement = BaseLightningElementConstructor;
+/*
+ * Copyright (c) 2018, salesforce.com, inc.
+ * All rights reserved.
+ * SPDX-License-Identifier: MIT
+ * For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/MIT
+ */
+
+function track(target, prop, descriptor) {
+  if (arguments.length === 1) {
+    return reactiveMembrane.getProxy(target);
+  }
+
+  {
+    if (arguments.length !== 3) {
+      assert.fail(`@track decorator can only be used with one argument to return a trackable object, or as a decorator function.`);
+    }
+
+    if (!isUndefined(descriptor)) {
+      const {
+        get,
+        set,
+        configurable,
+        writable
+      } = descriptor;
+      assert.isTrue(!get && !set, `Compiler Error: A @track decorator can only be applied to a public field.`);
+      assert.isTrue(configurable !== false, `Compiler Error: A @track decorator can only be applied to a configurable property.`);
+      assert.isTrue(writable !== false, `Compiler Error: A @track decorator can only be applied to a writable property.`);
+    }
+  }
+
+  return createTrackedPropertyDescriptor(target, prop, isUndefined(descriptor) ? true : descriptor.enumerable === true);
+}
+
+function createTrackedPropertyDescriptor(Ctor, key, enumerable) {
+  return {
+    get() {
+      const vm = getComponentVM(this);
+
+      {
+        assert.isTrue(vm && 'cmpRoot' in vm, `${vm} is not a vm.`);
+      }
+
+      valueObserved(this, key);
+      return vm.cmpTrack[key];
+    },
+
+    set(newValue) {
+      const vm = getComponentVM(this);
+
+      {
+        const vmBeingRendered = getVMBeingRendered();
+        assert.isTrue(vm && 'cmpRoot' in vm, `${vm} is not a vm.`);
+        assert.invariant(!isInvokingRender, `${vmBeingRendered}.render() method has side effects on the state of ${vm}.${toString(key)}`);
+        assert.invariant(!isUpdatingTemplate, `Updating the template of ${vmBeingRendered} has side effects on the state of ${vm}.${toString(key)}`);
+      }
+
+      const reactiveOrAnyValue = reactiveMembrane.getProxy(newValue);
+
+      if (reactiveOrAnyValue !== vm.cmpTrack[key]) {
+        vm.cmpTrack[key] = reactiveOrAnyValue;
+
+        if (isFalse$1(vm.isDirty)) {
+          // perf optimization to skip this step if the track property is on a component that is already dirty
+          valueMutated(this, key);
+        }
+      }
+    },
+
+    enumerable,
+    configurable: true
+  };
+}
+/*
+ * Copyright (c) 2018, salesforce.com, inc.
+ * All rights reserved.
+ * SPDX-License-Identifier: MIT
+ * For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/MIT
+ */
+
+
+function wireDecorator(target, prop, descriptor) {
+  {
+    if (!isUndefined(descriptor)) {
+      const {
+        get,
+        set,
+        configurable,
+        writable
+      } = descriptor;
+      assert.isTrue(!get && !set, `Compiler Error: A @wire decorator can only be applied to a public field.`);
+      assert.isTrue(configurable !== false, `Compiler Error: A @wire decorator can only be applied to a configurable property.`);
+      assert.isTrue(writable !== false, `Compiler Error: A @wire decorator can only be applied to a writable property.`);
+    }
+  }
+
+  return createTrackedPropertyDescriptor(target, prop, isObject$1(descriptor) ? descriptor.enumerable === true : true);
+}
+/**
+ * @wire decorator to wire fields and methods to a wire adapter in
+ * LWC Components. This function implements the internals of this
+ * decorator.
+ */
+
+
+function wire(_adapter, _config) {
+  const len = arguments.length;
+
+  if (len > 0 && len < 3) {
+    return wireDecorator;
+  } else {
+    {
+      assert.fail('@wire(adapter, config?) may only be used as a decorator.');
+    }
+
+    throw new TypeError();
+  }
+}
 /**
  * Copyright (C) 2018 salesforce.com, inc.
  */
@@ -4976,6 +5093,243 @@ const hasNativeSymbolsSupport$1 = Symbol('x').toString() === 'Symbol(x)';
  */
 
 const runtimeFlags = create$2(null); // This function is not whitelisted for use within components and is meant for
+/** version: 1.1.8 */
+
+/*
+ * Copyright (c) 2018, salesforce.com, inc.
+ * All rights reserved.
+ * SPDX-License-Identifier: MIT
+ * For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/MIT
+ */
+
+/**
+ * @api decorator to mark public fields and public methods in
+ * LWC Components. This function implements the internals of this
+ * decorator.
+ */
+
+function api$1(target, propName, descriptor) {
+  {
+    if (arguments.length !== 3) {
+      assert.fail(`@api decorator can only be used as a decorator function.`);
+    }
+  }
+
+  {
+    assert.invariant(!descriptor || isFunction(descriptor.get) || isFunction(descriptor.set), `Invalid property ${toString(propName)} definition in ${target}, it cannot be a prototype definition if it is a public property. Instead use the constructor to define it.`);
+
+    if (isObject$1(descriptor) && isFunction(descriptor.set)) {
+      assert.isTrue(isObject$1(descriptor) && isFunction(descriptor.get), `Missing getter for property ${toString(propName)} decorated with @api in ${target}. You cannot have a setter without the corresponding getter.`);
+    }
+  }
+
+  const meta = getDecoratorsRegisteredMeta(target); // initializing getters and setters for each public prop on the target prototype
+
+  if (isObject$1(descriptor) && (isFunction(descriptor.get) || isFunction(descriptor.set))) {
+    // if it is configured as an accessor it must have a descriptor
+    // @ts-ignore it must always be set before calling this method
+    meta.props[propName].config = isFunction(descriptor.set) ? 3 : 1;
+    return createPublicAccessorDescriptor(target, propName, descriptor);
+  } else {
+    // @ts-ignore it must always be set before calling this method
+    meta.props[propName].config = 0;
+    return createPublicPropertyDescriptor(target, propName, descriptor);
+  }
+}
+
+function createPublicPropertyDescriptor(proto, key, descriptor) {
+  return {
+    get() {
+      const vm = getComponentVM(this);
+
+      {
+        assert.isTrue(vm && 'cmpRoot' in vm, `${vm} is not a vm.`);
+      }
+
+      if (isBeingConstructed(vm)) {
+        {
+          const name = vm.elm.constructor.name;
+          logError(`\`${name}\` constructor can’t read the value of property \`${toString(key)}\` because the owner component hasn’t set the value yet. Instead, use the \`${name}\` constructor to set a default value for the property.`, vm.elm);
+        }
+
+        return;
+      }
+
+      valueObserved(this, key);
+      return vm.cmpProps[key];
+    },
+
+    set(newValue) {
+      const vm = getComponentVM(this);
+
+      {
+        const vmBeingRendered = getVMBeingRendered();
+        assert.isTrue(vm && 'cmpRoot' in vm, `${vm} is not a vm.`);
+        assert.invariant(!isInvokingRender, `${vmBeingRendered}.render() method has side effects on the state of ${vm}.${toString(key)}`);
+        assert.invariant(!isUpdatingTemplate, `Updating the template of ${vmBeingRendered} has side effects on the state of ${vm}.${toString(key)}`);
+      }
+
+      vm.cmpProps[key] = newValue; // avoid notification of observability if the instance is already dirty
+
+      if (isFalse$1(vm.isDirty)) {
+        // perf optimization to skip this step if the component is dirty already.
+        valueMutated(this, key);
+      }
+    },
+
+    enumerable: isUndefined(descriptor) ? true : descriptor.enumerable
+  };
+}
+
+class AccessorReactiveObserver extends ReactiveObserver {
+  constructor(vm, set) {
+    super(() => {
+      if (isFalse$1(this.debouncing)) {
+        this.debouncing = true;
+        addCallbackToNextTick(() => {
+          if (isTrue$1(this.debouncing)) {
+            const {
+              value
+            } = this;
+            const {
+              isDirty: dirtyStateBeforeSetterCall,
+              component,
+              idx
+            } = vm;
+            set.call(component, value); // de-bouncing after the call to the original setter to prevent
+            // infinity loop if the setter itself is mutating things that
+            // were accessed during the previous invocation.
+
+            this.debouncing = false;
+
+            if (isTrue$1(vm.isDirty) && isFalse$1(dirtyStateBeforeSetterCall) && idx > 0) {
+              // immediate rehydration due to a setter driven mutation, otherwise
+              // the component will get rendered on the second tick, which it is not
+              // desirable.
+              rerenderVM(vm);
+            }
+          }
+        });
+      }
+    });
+    this.debouncing = false;
+  }
+
+  reset(value) {
+    super.reset();
+    this.debouncing = false;
+
+    if (arguments.length > 0) {
+      this.value = value;
+    }
+  }
+
+}
+
+function createPublicAccessorDescriptor(Ctor, key, descriptor) {
+  const {
+    get,
+    set,
+    enumerable
+  } = descriptor;
+
+  if (!isFunction(get)) {
+    {
+      assert.fail(`Invalid attempt to create public property descriptor ${toString(key)} in ${Ctor}. It is missing the getter declaration with @api get ${toString(key)}() {} syntax.`);
+    }
+
+    throw new TypeError();
+  }
+
+  return {
+    get() {
+      {
+        const vm = getComponentVM(this);
+        assert.isTrue(vm && 'cmpRoot' in vm, `${vm} is not a vm.`);
+      }
+
+      return get.call(this);
+    },
+
+    set(newValue) {
+      const vm = getComponentVM(this);
+
+      {
+        assert.isTrue(vm && 'cmpRoot' in vm, `${vm} is not a vm.`);
+        const vmBeingRendered = getVMBeingRendered();
+        assert.invariant(!isInvokingRender, `${vmBeingRendered}.render() method has side effects on the state of ${vm}.${toString(key)}`);
+        assert.invariant(!isUpdatingTemplate, `Updating the template of ${vmBeingRendered} has side effects on the state of ${vm}.${toString(key)}`);
+      }
+
+      if (set) {
+        if (runtimeFlags.ENABLE_REACTIVE_SETTER) {
+          let ro = vm.oar[key];
+
+          if (isUndefined(ro)) {
+            ro = vm.oar[key] = new AccessorReactiveObserver(vm, set);
+          } // every time we invoke this setter from outside (through this wrapper setter)
+          // we should reset the value and then debounce just in case there is a pending
+          // invocation the next tick that is not longer relevant since the value is changing
+          // from outside.
+
+
+          ro.reset(newValue);
+          ro.observe(() => {
+            set.call(this, newValue);
+          });
+        } else {
+          set.call(this, newValue);
+        }
+      } else {
+        assert.fail(`Invalid attempt to set a new value for property ${toString(key)} of ${vm} that does not has a setter decorated with @api.`);
+      }
+    },
+
+    enumerable
+  };
+}
+/*
+ * Copyright (c) 2018, salesforce.com, inc.
+ * All rights reserved.
+ * SPDX-License-Identifier: MIT
+ * For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/MIT
+ */
+
+/**
+ * EXPERIMENTAL: This function allows for the registration of "services" in
+ * LWC by exposing hooks into the component life-cycle. This API is subject
+ * to change or being removed.
+ */
+
+
+function decorate(Ctor, decorators) {
+  // intentionally comparing decorators with null and undefined
+  if (!isFunction(Ctor) || decorators == null) {
+    throw new TypeError();
+  }
+
+  const props = getOwnPropertyNames(decorators); // intentionally allowing decoration of classes only for now
+
+  const target = Ctor.prototype;
+
+  for (let i = 0, len = props.length; i < len; i += 1) {
+    const propName = props[i];
+    const decorator = decorators[propName];
+
+    if (!isFunction(decorator)) {
+      throw new TypeError();
+    }
+
+    const originalDescriptor = getOwnPropertyDescriptor(target, propName);
+    const descriptor = decorator(Ctor, propName, originalDescriptor);
+
+    if (!isUndefined(descriptor)) {
+      defineProperty(target, propName, descriptor);
+    }
+  }
+
+  return Ctor; // chaining
+}
 /*
  * Copyright (c) 2018, salesforce.com, inc.
  * All rights reserved.
@@ -4985,9 +5339,104 @@ const runtimeFlags = create$2(null); // This function is not whitelisted for use
 
 
 const signedDecoratorToMetaMap = new Map();
+/**
+ * INTERNAL: This function can only be invoked by compiled code. The compiler
+ * will prevent this function from being imported by userland code.
+ */
+
+function registerDecorators(Ctor, meta) {
+  const decoratorMap = create(null);
+  const props = getPublicPropertiesHash(Ctor, meta.publicProps);
+  const methods = getPublicMethodsHash(Ctor, meta.publicMethods);
+  const wire$1 = getWireHash(Ctor, meta.wire);
+  const track$1 = getTrackHash(Ctor, meta.track);
+  const fields = meta.fields;
+  signedDecoratorToMetaMap.set(Ctor, {
+    props,
+    methods,
+    wire: wire$1,
+    track: track$1,
+    fields
+  });
+
+  for (const propName in props) {
+    decoratorMap[propName] = api$1;
+  }
+
+  if (wire$1) {
+    for (const propName in wire$1) {
+      const wireDef = wire$1[propName];
+
+      if (wireDef.method) {
+        // for decorated methods we need to do nothing
+        continue;
+      }
+
+      decoratorMap[propName] = wire(wireDef.adapter, wireDef.params);
+    }
+  }
+
+  if (track$1) {
+    for (const propName in track$1) {
+      decoratorMap[propName] = track;
+    }
+  }
+
+  decorate(Ctor, decoratorMap);
+  return Ctor;
+}
 
 function getDecoratorsRegisteredMeta(Ctor) {
   return signedDecoratorToMetaMap.get(Ctor);
+}
+
+function getTrackHash(target, track) {
+  if (isUndefined(track) || getOwnPropertyNames(track).length === 0) {
+    return EmptyObject;
+  } // TODO: #1302 - check that anything in `track` is correctly defined in the prototype
+
+
+  return assign(create(null), track);
+}
+
+function getWireHash(target, wire) {
+  if (isUndefined(wire) || getOwnPropertyNames(wire).length === 0) {
+    return;
+  } // TODO: #1302 - check that anything in `wire` is correctly defined in the prototype
+
+
+  return assign(create(null), wire);
+}
+
+function getPublicPropertiesHash(target, props) {
+  if (isUndefined(props) || getOwnPropertyNames(props).length === 0) {
+    return EmptyObject;
+  }
+
+  return getOwnPropertyNames(props).reduce((propsHash, propName) => {
+    const attr = getAttrNameFromPropName(propName);
+    propsHash[propName] = assign({
+      config: 0,
+      type: 'any',
+      attr
+    }, props[propName]);
+    return propsHash;
+  }, create(null));
+}
+
+function getPublicMethodsHash(target, publicMethods) {
+  if (isUndefined(publicMethods) || publicMethods.length === 0) {
+    return EmptyObject;
+  }
+
+  return publicMethods.reduce((methodsHash, methodName) => {
+    {
+      assert.isTrue(isFunction(target.prototype[methodName]), `Component "${target.name}" should have a method \`${methodName}\` instead of ${target.prototype[methodName]}.`);
+    }
+
+    methodsHash[methodName] = target.prototype[methodName];
+    return methodsHash;
+  }, create(null));
 }
 /*
  * Copyright (c) 2018, salesforce.com, inc.
@@ -6175,6 +6624,25 @@ function createComponent$1(sel, Ctor) {
   });
   return comp;
 } // Recursively render the embedded components
+// function renderRecursively(context: SSRContext, nodes: (VNode | null)[]) {
+//     nodes.forEach(vnode => {
+//         if (vnode && isCustomElement(vnode)) {
+//             const cv = vnode as VCustomElement;
+//             // Is this currently the only way to create the component?
+//             // Can we use a create hook instead?
+//             //           cv.hook.create(vnode);
+//             const comp = createComponent(cv.sel, cv.ctor);
+//             (cv.owner = getComponentVM(comp)), ssrRenderComponent(context, cv);
+//         }
+//     });
+// }
+
+
+function createCustomElement(vnode) {
+  const element = document.createElement(vnode.sel);
+  vnode.elm = element;
+  vnode.hook.create(vnode);
+} // Recursively render the embedded components
 
 
 function renderRecursively(context, nodes) {
@@ -6184,18 +6652,18 @@ function renderRecursively(context, nodes) {
       // Can we use a create hook instead?
       //           cv.hook.create(vnode);
 
-      const comp = createComponent$1(cv.sel, cv.ctor);
-      cv.owner = getComponentVM(comp), ssrRenderComponent(context, cv);
+      createCustomElement(cv);
+      const vm = getCustomElementVM(cv.elm);
+      ssrRenderComponent(context, cv, vm);
     }
   });
 }
 
-function ssrRenderComponent(context, parent) {
-  const vm = parent.owner; // Mark the component as connected
+function ssrRenderComponent(context, parent, vm) {
+  // Mark the component as connected
   // Should happen before 'prefetchAsyncData', because this is the first time when the
   // component gets access to its properties so it can for example fetch() data.
   // prefetchAsyncData can get a hold on the Promise and return it for async rendering
-
   const ce = vm.component;
 
   if (ce.connectedCallback) {
@@ -6244,7 +6712,7 @@ function renderToString$1(sel, options) {
   // Ths use of a DOM element is temporary here
 
 
-  const comp = createComponent$1(sel, options.is); // Create the main element 
+  const comp = createComponent$1(sel, options.is); // Create the main element
 
   const data = {
     attrs: {}
@@ -6257,9 +6725,9 @@ function renderToString$1(sel, options) {
     elm: undefined,
     key: 0,
     hook: null,
-    owner: getComponentVM(comp)
+    owner: null
   };
-  ssrRenderComponent(context, parent); // Ok, in case there are some pending promises (async data), we throw an exception
+  ssrRenderComponent(context, parent, getComponentVM(comp)); // Ok, in case there are some pending promises (async data), we throw an exception
 
   if (options.asyncData) {
     const p = context.getPromise();
@@ -6326,15 +6794,82 @@ tmpl$1.stylesheetTokens = {
   shadowAttribute: "ssr-helloworldcontainer_helloworldcontainer"
 };
 
-class HelloWorld$2 extends BaseLightningElement {
+class HelloWorldContainer extends BaseLightningElement {
   constructor() {
     super();
   }
 
 }
 
-var HelloWorldContainer = registerComponent(HelloWorld$2, {
+var HelloWorldContainer$1 = registerComponent(HelloWorldContainer, {
   tmpl: _tmpl$1
+});
+
+function tmpl$2($api, $cmp, $slotset, $ctx) {
+  const {
+    d: api_dynamic,
+    h: api_element
+  } = $api;
+  return [api_element("span", {
+    key: 0
+  }, [api_dynamic($cmp.value)])];
+}
+
+var _tmpl$2 = registerTemplate(tmpl$2);
+tmpl$2.stylesheets = [];
+tmpl$2.stylesheetTokens = {
+  hostAttribute: "ssr-label_label-host",
+  shadowAttribute: "ssr-label_label"
+};
+
+class Label extends BaseLightningElement {
+  constructor() {
+    super();
+    this.value = "XYZ";
+  }
+
+}
+
+registerDecorators(Label, {
+  publicProps: {
+    value: {
+      config: 0
+    }
+  }
+});
+
+var _ssrLabel = registerComponent(Label, {
+  tmpl: _tmpl$2
+});
+
+function tmpl$3($api, $cmp, $slotset, $ctx) {
+  const {
+    c: api_custom_element
+  } = $api;
+  return [api_custom_element("ssr-label", _ssrLabel, {
+    props: {
+      "value": "Hello, label!"
+    },
+    key: 0
+  }, [])];
+}
+
+var _tmpl$3 = registerTemplate(tmpl$3);
+tmpl$3.stylesheets = [];
+tmpl$3.stylesheetTokens = {
+  hostAttribute: "ssr-labelcontainer_labelcontainer-host",
+  shadowAttribute: "ssr-labelcontainer_labelcontainer"
+};
+
+class LabelContainer extends BaseLightningElement {
+  constructor() {
+    super();
+  }
+
+}
+
+var LabelContainer$1 = registerComponent(LabelContainer, {
+  tmpl: _tmpl$3
 });
 
 var main = {
@@ -6345,7 +6880,12 @@ var main = {
   },
   HelloWorldContainer: () => {
     return renderToString('ssr-helloworldcontainer', {
-      is: HelloWorldContainer
+      is: HelloWorldContainer$1
+    });
+  },
+  LabelContainer: () => {
+    return renderToString('ssr-labelcontainer', {
+      is: LabelContainer$1
     });
   }
 };

@@ -13,3 +13,9 @@ main.HelloWorldContainer().then(html => {
     console.log(html);
     console.log('');
 });
+
+main.LabelContainer().then(html => {
+    console.log('Label Container');
+    console.log(html);
+    console.log('');
+});

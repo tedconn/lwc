@@ -1,5 +1,5 @@
 import { VCustomElement, VNode, VNodeData, VElement, Hooks } from '../../3rdparty/snabbdom/types';
-import { getComponentVM } from '../vm';
+import { getComponentVM, getCustomElementVM, VM } from '../vm';
 import { createElement } from '../upgrade';
 import { LightningElement } from '../base-lightning-element';
 import { renderComponent, ComponentConstructor } from '../component';
@@ -56,6 +56,12 @@ function createComponent(sel: string, Ctor: ComponentConstructor): LightningElem
     return comp;
 }
 
+function createCustomElement(vnode: VCustomElement) {
+    const element = document.createElement(vnode.sel);
+    vnode.elm = element;
+    vnode.hook.create(vnode);
+}
+
 // Recursively render the embedded components
 function renderRecursively(context: SSRContext, nodes: (VNode | null)[]) {
     nodes.forEach(vnode => {
@@ -64,15 +70,14 @@ function renderRecursively(context: SSRContext, nodes: (VNode | null)[]) {
             // Is this currently the only way to create the component?
             // Can we use a create hook instead?
             //           cv.hook.create(vnode);
-            const comp = createComponent(cv.sel, cv.ctor);
-            (cv.owner = getComponentVM(comp)), ssrRenderComponent(context, cv);
+            createCustomElement(cv);
+            const vm = getCustomElementVM(cv.elm as HTMLElement);
+            ssrRenderComponent(context, cv, vm);
         }
     });
 }
 
-function ssrRenderComponent(context: SSRContext, parent: VNode) {
-    const vm = parent.owner;
-
+function ssrRenderComponent(context: SSRContext, parent: VNode, vm: VM) {
     // Mark the component as connected
     // Should happen before 'prefetchAsyncData', because this is the first time when the
     // component gets access to its properties so it can for example fetch() data.
@@ -134,10 +139,10 @@ export function renderToString(sel: string, options: Options): string {
         elm: undefined,
         key: 0,
         hook: (null as any) as Hooks,
-        owner: getComponentVM(comp),
+        owner: (null as any) as VM,
     };
 
-    ssrRenderComponent(context, parent);
+    ssrRenderComponent(context, parent, getComponentVM(comp));
 
     // Ok, in case there are some pending promises (async data), we throw an exception
     if (options.asyncData) {
