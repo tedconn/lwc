@@ -27,11 +27,12 @@ function escape(s: string): string {
     return s && reHasUnescapedHtml.test(s) ? s.replace(reUnescapedHtml, escapeHtmlChar) : s;
 }
 
-const TESTS = true;
-
 function serializeStartTag(nodeName: string, element: VElement): string {
     const attrs = element.data.attrs || {};
-    const keys = TESTS ? Object.keys(attrs).sort() : Object.keys(attrs); // Sort only matters during tests
+    const keys = Object.keys(attrs);
+    if (process.env.NODE_ENV !== 'production') {
+        keys.sort();
+    }
     return `<${nodeName}${keys.map((a: string) => ` ${a}="${attrs[a]}"`).join('')}>`;
 }
 

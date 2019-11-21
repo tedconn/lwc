@@ -6523,7 +6523,11 @@ function escape(s) {
 
 function serializeStartTag(nodeName, element) {
   const attrs = element.data.attrs || {};
-  const keys = Object.keys(attrs).sort(); // Sort only matters during tests
+  const keys = Object.keys(attrs);
+
+  {
+    keys.sort();
+  }
 
   return `<${nodeName}${keys.map(a => ` ${a}="${attrs[a]}"`).join('')}>`;
 }
