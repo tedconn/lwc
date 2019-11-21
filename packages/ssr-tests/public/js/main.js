@@ -6592,11 +6592,11 @@ function serializeVNode(node) {
  */
 
 
-class SSRContext$1 {
+class RenderingContext {
   constructor(options) {
     this.promises = [];
     this.options = options;
-    this.timeout = options && options.timeout || 8 * 1000;
+    this.timeout = options && options.timeout || 5 * 1000;
   }
 
   add(p) {
@@ -6618,52 +6618,31 @@ class SSRContext$1 {
 //
 
 
-function createComponent$1(sel, Ctor) {
-  const comp = createElement(sel, {
-    is: Ctor
-  });
-  return comp;
-} // Recursively render the embedded components
-// function renderRecursively(context: SSRContext, nodes: (VNode | null)[]) {
-//     nodes.forEach(vnode => {
-//         if (vnode && isCustomElement(vnode)) {
-//             const cv = vnode as VCustomElement;
-//             // Is this currently the only way to create the component?
-//             // Can we use a create hook instead?
-//             //           cv.hook.create(vnode);
-//             const comp = createComponent(cv.sel, cv.ctor);
-//             (cv.owner = getComponentVM(comp)), ssrRenderComponent(context, cv);
-//         }
-//     });
-// }
-
-
 function createCustomElement(vnode) {
+  // Ths use of a DOM element is temporary here until LWC engine is fixed
   const element = document.createElement(vnode.sel);
   vnode.elm = element;
   vnode.hook.create(vnode);
 } // Recursively render the embedded components
 
 
-function renderRecursively(context, nodes) {
+function renderRecursively(renderingContext, nodes) {
   nodes.forEach(vnode => {
     if (vnode && isCustomElement(vnode)) {
-      const cv = vnode; // Is this currently the only way to create the component?
-      // Can we use a create hook instead?
-      //           cv.hook.create(vnode);
-
+      const cv = vnode;
       createCustomElement(cv);
       const vm = getCustomElementVM(cv.elm);
-      ssrRenderComponent(context, cv, vm);
+      ssrRenderComponent(renderingContext, cv, vm);
     }
   });
 }
 
-function ssrRenderComponent(context, parent, vm) {
-  // Mark the component as connected
-  // Should happen before 'prefetchAsyncData', because this is the first time when the
-  // component gets access to its properties so it can for example fetch() data.
-  // prefetchAsyncData can get a hold on the Promise and return it for async rendering
+function ssrRenderComponent(renderingContext, parent, vm) {
+  const {
+    options
+  } = renderingContext;
+  const ssrContext = options.context || {}; // Mark the component as connected
+
   const ce = vm.component;
 
   if (ce.connectedCallback) {
@@ -6673,16 +6652,12 @@ function ssrRenderComponent(context, parent, vm) {
   //------
 
 
-  if (context.options.asyncData && ce.constructor.prefetchAsyncData) {
-    // The component properties are added to the context
-    const ctx = Object.assign(Object.assign({}, context.options.asyncContext), {
-      props: ce
-    });
-    const p = ce.constructor.prefetchAsyncData.call(ce, ctx);
+  if (options.asyncPromise) {
+    const p = options.asyncPromise.call(null, ce, ssrContext);
 
     if (p && p.then) {
       //console.log("Async rendering detected for component: "+ce.Ctor);
-      context.add(p); // We stop here and we don't render the children
+      renderingContext.add(p); // We stop here and we don't render the children
       // But the peers will be rendered in case there are rendered simultaneously
 
       return [];
@@ -6691,28 +6666,32 @@ function ssrRenderComponent(context, parent, vm) {
   // A check in debug mode will throw an error if it is false (renderComponent)
 
 
-  vm.isDirty = true; // Make it dirty to force
+  if (!options.shouldRender || options.shouldRender(ce, ssrContext)) {
+    vm.isDirty = true; // Make it dirty to force
 
-  const children = renderComponent(vm);
+    const children = renderComponent(vm);
 
-  if (children) {
-    renderRecursively(context, children);
+    if (children) {
+      renderRecursively(renderingContext, children);
+    }
+
+    parent.children = children;
   }
-
-  parent.children = children;
 }
 
 function renderToString$1(sel, options) {
-  const context = new SSRContext$1(options);
+  const context = new RenderingContext(options);
   const is = options.is;
 
   if (!is) {
     throw new Error('Missing component type (options.is)');
   } // Create the component to render
-  // Ths use of a DOM element is temporary here
+  // Ths use of a DOM element is temporary here until LWC engine is fixed
 
 
-  const comp = createComponent$1(sel, options.is); // Create the main element
+  const comp = createElement(sel, {
+    is
+  }); // Create the main element
 
   const data = {
     attrs: {}
@@ -6729,7 +6708,7 @@ function renderToString$1(sel, options) {
   };
   ssrRenderComponent(context, parent, getComponentVM(comp)); // Ok, in case there are some pending promises (async data), we throw an exception
 
-  if (options.asyncData) {
+  if (options.asyncPromise) {
     const p = context.getPromise();
 
     if (p) {
@@ -6825,7 +6804,7 @@ tmpl$2.stylesheetTokens = {
 class Label extends BaseLightningElement {
   constructor() {
     super();
-    this.value = "XYZ";
+    this.value = 'XYZ';
   }
 
 }

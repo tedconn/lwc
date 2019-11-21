@@ -2,34 +2,38 @@ import { VCustomElement, VNode, VNodeData, VElement, Hooks } from '../../3rdpart
 import { getComponentVM, getCustomElementVM, VM } from '../vm';
 import { createElement } from '../upgrade';
 import { LightningElement } from '../base-lightning-element';
-import { renderComponent, ComponentConstructor } from '../component';
+import { renderComponent, ComponentConstructor, ComponentInterface } from '../component';
 
 import { serializeVNode } from './serialize';
 import { isCustomElement } from './snabdom-utils';
 
+
+type ShouldRender = (component: ComponentInterface, context: object) => boolean;
+type AsyncPromiseResolver = (component: ComponentInterface, context: object) => Promise<any>|null;
+
 /**
  * Rendering engine for SSR.
  */
-
 export interface Options {
     is: ComponentConstructor;
     timeout?: number;
-    asyncData?: boolean;
-    asyncContext?: object;
+    shouldRender?: ShouldRender;
+    asyncPromise?: AsyncPromiseResolver;
+    context?: object;
 }
 
 /**
  * This class carries the ssr context while rendering the components, as well as
  * the promises that need to be resolved before the final rendering takes place.
  */
-class SSRContext {
+class RenderingContext {
     promises: Promise<any>[] = [];
     options: Options;
     timeout: number;
 
     constructor(options: Options) {
         this.options = options;
-        this.timeout = (options && options.timeout) || 8 * 1000;
+        this.timeout = (options && options.timeout) || 5 * 1000;
     }
     add(p: Promise<any>) {
         if (p) {
@@ -49,39 +53,30 @@ class SSRContext {
 // SSR Rendering engine
 //
 
-function createComponent(sel: string, Ctor: ComponentConstructor): LightningElement {
-    const comp: LightningElement = (createElement(sel, {
-        is: Ctor,
-    }) as unknown) as LightningElement;
-    return comp;
-}
-
 function createCustomElement(vnode: VCustomElement) {
+    // Ths use of a DOM element is temporary here until LWC engine is fixed
     const element = document.createElement(vnode.sel);
     vnode.elm = element;
     vnode.hook.create(vnode);
 }
 
 // Recursively render the embedded components
-function renderRecursively(context: SSRContext, nodes: (VNode | null)[]) {
+function renderRecursively(renderingContext: RenderingContext, nodes: (VNode | null)[]) {
     nodes.forEach(vnode => {
         if (vnode && isCustomElement(vnode)) {
             const cv = vnode as VCustomElement;
-            // Is this currently the only way to create the component?
-            // Can we use a create hook instead?
-            //           cv.hook.create(vnode);
             createCustomElement(cv);
             const vm = getCustomElementVM(cv.elm as HTMLElement);
-            ssrRenderComponent(context, cv, vm);
+            ssrRenderComponent(renderingContext, cv, vm);
         }
     });
 }
 
-function ssrRenderComponent(context: SSRContext, parent: VNode, vm: VM) {
+function ssrRenderComponent(renderingContext: RenderingContext, parent: VNode, vm: VM) {
+    const { options } = renderingContext;
+    const ssrContext = options.context || {}
+
     // Mark the component as connected
-    // Should happen before 'prefetchAsyncData', because this is the first time when the
-    // component gets access to its properties so it can for example fetch() data.
-    // prefetchAsyncData can get a hold on the Promise and return it for async rendering
     const ce: LightningElement = vm.component as LightningElement;
     if (ce.connectedCallback) {
         ce.connectedCallback.call(ce);
@@ -90,13 +85,11 @@ function ssrRenderComponent(context: SSRContext, parent: VNode, vm: VM) {
     //------
     // PHIL: Here is how async rendering can happen
     //------
-    if (context.options.asyncData && (ce.constructor as any).prefetchAsyncData) {
-        // The component properties are added to the context
-        const ctx = { ...context.options.asyncContext, props: ce };
-        const p = (ce.constructor as any).prefetchAsyncData.call(ce, ctx);
+    if (options.asyncPromise) {
+        const p = options.asyncPromise.call(null,ce, ssrContext);
         if (p && p.then) {
             //console.log("Async rendering detected for component: "+ce.Ctor);
-            context.add(p);
+            renderingContext.add(p);
             // We stop here and we don't render the children
             // But the peers will be rendered in case there are rendered simultaneously
             return [];
@@ -105,18 +98,20 @@ function ssrRenderComponent(context: SSRContext, parent: VNode, vm: VM) {
 
     // Make the VM dirty to force the rendering
     // A check in debug mode will throw an error if it is false (renderComponent)
-    vm.isDirty = true; // Make it dirty to force
-    const children = renderComponent(vm);
+    if (!options.shouldRender || options.shouldRender(ce,ssrContext) ) {
+        vm.isDirty = true; // Make it dirty to force
+        const children = renderComponent(vm);
 
-    if (children) {
-        renderRecursively(context, children);
+        if (children) {
+            renderRecursively(renderingContext, children);
+        }
+
+        parent.children = children;
     }
-
-    parent.children = children;
 }
 
 export function renderToString(sel: string, options: Options): string {
-    const context = new SSRContext(options);
+    const context = new RenderingContext(options);
 
     const is = options.is;
     if (!is) {
@@ -124,8 +119,10 @@ export function renderToString(sel: string, options: Options): string {
     }
 
     // Create the component to render
-    // Ths use of a DOM element is temporary here
-    const comp = createComponent(sel, options.is);
+    // Ths use of a DOM element is temporary here until LWC engine is fixed
+    const comp: ComponentInterface = (createElement(sel, {
+        is,
+    }) as unknown) as ComponentInterface;
 
     // Create the main element
     const data: VNodeData = {
@@ -145,7 +142,7 @@ export function renderToString(sel: string, options: Options): string {
     ssrRenderComponent(context, parent, getComponentVM(comp));
 
     // Ok, in case there are some pending promises (async data), we throw an exception
-    if (options.asyncData) {
+    if (options.asyncPromise) {
         const p = context.getPromise();
         if (p) {
             throw p;
